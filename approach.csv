@@ -1,0 +1,10 @@
+Part 1 -> Data Manipulation
+1. Sort Data in a way that all of it can be used
+
+Part 2 -> Training:
+1. Train model on all the data to develop strong bias towards best teams
+2. Find a way to pass in all the data and have the input only be team 1 + team 2
+
+Part 3 -> Testing:
+1. Input -> Team 1 + Team 2
+2. Output -> Probabilities (0 to 1) -> leaning towards the team 1 winning percentage
