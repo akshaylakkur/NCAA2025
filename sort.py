@@ -23,8 +23,9 @@ for dir in os.listdir('march-machine-learning-mania-2025'):
 
 headers = ['Season', 'DayNum', 'team1', 'team1_score', 'team1_seed', 'team2', 'team2_score', 'team2_seed', 'WFGM', 'WFGA', 'WFGM3', 'WFGA3', 'WFTM', 'WFTA', 'WOR', 'WDR', 'WAst', 'WTO', 'WSH', 'WBlk', 'WPF', 'LFGM', 'LFGA', 'LFGM3', 'LFGA3', 'LFTM', 'LFTA', 'LOR', 'LDR', 'LAst', 'LTO', 'LSH', 'LBlk', 'LPF', 'NumOT']
 male_frame, female_frame = pd.DataFrame(columns=headers), pd.DataFrame(columns=headers)
-dr = pd.read_csv(orig_path + 'MNCAATourneyDetailedResults.csv')
-seeds = pd.read_csv(orig_path + 'MNCAATourneySeeds.csv')
+dr = pd.read_csv(orig_path + 'WNCAATourneyDetailedResults.csv')
+seeds = pd.read_csv(orig_path + 'WNCAATourneySeeds.csv')
+seeds['Seed'] = seeds['Seed'].str.extract('(\d+)')
 
 # Merge seeds for the winning team (WTeamID)
 dr = dr.merge(
@@ -46,7 +47,8 @@ columns_order.insert(7, columns_order.pop(columns_order.index('LTeamSeed')))  # 
 
 # Apply the new column order
 dr = dr[columns_order]
+dr = dr.drop(columns='WLoc', axis=1)
 
-dr.to_csv('male_data.csv', index=False)
+dr.to_csv('female_data.csv', index=False)
 
 
