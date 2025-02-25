@@ -13,9 +13,12 @@ data = pd.read_csv('male_data.csv')
 
 season, wteam, lteam = data['Season'], data['WTeamID'], data['LTeamID']
 data = data.drop(columns=['Season', 'WTeamID', 'LTeamID'])
-
-data = torch.from_numpy(data.to_numpy()).float()
-wteam, lteam = torch.from_numpy(wteam.to_numpy()).long(), torch.from_numpy(lteam.to_numpy()).long()
+season, wteam, lteam, data = torch.from_numpy(season.to_numpy()).long(), torch.from_numpy(wteam.to_numpy()).long(), torch.from_numpy(lteam.to_numpy()).long(), torch.from_numpy(data.to_numpy()).float()
+swap = torch.randn(len(wteam)) > 0.5
+t1 = torch.where(swap, lteam,wteam)
+t2 = torch.where(swap, wteam,lteam)
+wins = torch.ones_like(t1)
+wins[swap] = 0
 
 class MemoryNet(nn.Module):
     def __init__(self, num_teams, num_seasons, input_dim, hidden_dim=256, embedding_dim=8, output_dim=1):
@@ -53,11 +56,10 @@ class MemoryNet(nn.Module):
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, hidden_dim),
-            nn.Sigmoid()
         )
 
         self.combined_fc = nn.Sequential(
-            nn.Linear(2 * embedding_dim + hidden_dim, hidden_dim),
+            nn.Linear(2 * embedding_dim + hidden_dim + 248, hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(),
@@ -85,20 +87,23 @@ class MemoryNet(nn.Module):
             features = self.fc3(features)
 
             concat = torch.cat((teams, season_emb, features), dim=1)
-            return self.combined_fc(concat)
+            out = self.combined_fc(concat)
+            return out
 
 
 
-
-
-model = MemoryNet(1481,22,33)
+model = MemoryNet(1481,2025,32)
 loss_fn = nn.BCELoss()
 optimizer = optim.Adam(model.parameters(), lr=0.001)
 
-data = TensorDataset(season, wteam, lteam, data)
+data = TensorDataset(season, t1, t2, data, wins)
 dataloader = DataLoader(data, batch_size=128, shuffle=True)
 epochs = 100
-for epoch in range(epochs):
-    model.train()
-    for season, wteam, lteam, features in dataloader:
-        optimizer.zero_grad()
+
+# for epoch in range(epochs):
+model.train()
+for season, team1, team2, features, winners in dataloader:
+    optimizer.zero_grad()
+    num = model(season, team1, team2, features)
+    print(num)
+    break
