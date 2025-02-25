@@ -8,11 +8,22 @@ from torch.utils.data import DataLoader, Dataset, TensorDataset
 import pandas as pd
 from torchvision.ops import MLP
 
-class Prediction(nn.Module):
-    def __init__(self, input_dim, hidden_dim, output_dim):
-        super(Prediction, self).__init__()
-        # self.historic_data = historic_data
-        # self.embedding = nn.Embedding(2026, 8)
+
+data = pd.read_csv('male_data.csv')
+
+season, wteam, lteam = data['Season'], data['WTeamID'], data['LTeamID']
+data = data.drop(columns=['Season', 'WTeamID', 'LTeamID'])
+
+data = torch.from_numpy(data.to_numpy()).float()
+wteam, lteam = torch.from_numpy(wteam.to_numpy()).long(), torch.from_numpy(lteam.to_numpy()).long()
+
+class MemoryNet(nn.Module):
+    def __init__(self, num_teams, num_seasons, input_dim, hidden_dim=256, embedding_dim=8, output_dim=1):
+        super(MemoryNet, self).__init__()
+
+        self.team_embedding = nn.Embedding(num_teams, embedding_dim)
+        self.season_embedding = nn.Embedding(num_seasons, embedding_dim)
+
         self.fc1 = nn.Sequential(
             nn.Linear(input_dim, hidden_dim),
             nn.ReLU(),
@@ -20,16 +31,8 @@ class Prediction(nn.Module):
             nn.Dropout(0.2),
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(),
-            nn.BatchNorm1d(hidden_dim, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True),
-            nn.Dropout(0.2),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.Linear(hidden_dim, hidden_dim),
         )
         self.fc2 = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.ReLU(),
-            nn.BatchNorm1d(hidden_dim, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True),
-            nn.Dropout(0.2),
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(),
             nn.BatchNorm1d(hidden_dim, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True),
@@ -42,37 +45,60 @@ class Prediction(nn.Module):
             nn.BatchNorm1d(hidden_dim, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True),
             nn.Dropout(0.2),
             nn.Linear(hidden_dim, hidden_dim),
+        )
+
+        self.inference_layer = nn.Sequential(
+            nn.Linear(2 * embedding_dim, hidden_dim),
             nn.ReLU(),
-            nn.BatchNorm1d(hidden_dim, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True),
-            nn.Dropout(0.2),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.Sigmoid()
+        )
+
+        self.combined_fc = nn.Sequential(
+            nn.Linear(2 * embedding_dim + hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
             nn.Linear(hidden_dim, output_dim),
             nn.Sigmoid()
         )
-    def forward(self, x):
-        x = self.fc1(x)
-        x = self.fc2(x)
-        x = self.fc3(x)
-        return x
+    def forward(self, season=None, team1=None, team2=None, features=None, infer=False):
+        if infer:
+            team1_emb = self.team_embedding(team1)
+            team2_emb = self.team_embedding(team2)
+            season_emb = self.season_embedding(season)
+            concat = torch.cat((team1_emb, team2_emb, season_emb), dim=1)
+            concat = self.inference_layer(concat)
+            concat = self.combined_fc(concat)
+            return concat
+        else:
+            team1_emb = self.team_embedding(team1)
+            team2_emb = self.team_embedding(team2)
+            season_emb = self.season_embedding(season)
 
-model = Prediction(35, 256, 35)
-data = pd.DataFrame(pd.read_csv('male_data.csv'))
-data = torch.from_numpy(data.to_numpy()).float()
-data = TensorDataset(data)
-dataloader = DataLoader(data, batch_size=128, shuffle=False)
+            teams = self.inference_layer(torch.cat((team1_emb, team2_emb), dim=1))
 
-'training loop'
+            features = self.fc1(features)
+            features = self.fc2(features)
+            features = self.fc3(features)
+
+            concat = torch.cat((teams, season_emb, features), dim=1)
+            return self.combined_fc(concat)
+
+
+
+
+
+model = MemoryNet(1481,22,33)
+loss_fn = nn.BCELoss()
 optimizer = optim.Adam(model.parameters(), lr=0.001)
-loss_fn = nn.MSELoss()
-epoch = 100
 
-for epoch in range(epoch):
+data = TensorDataset(season, wteam, lteam, data)
+dataloader = DataLoader(data, batch_size=128, shuffle=True)
+epochs = 100
+for epoch in range(epochs):
     model.train()
-    for item in dataloader:
+    for season, wteam, lteam, features in dataloader:
         optimizer.zero_grad()
-        outputs = model(item[0])
-        loss = loss_fn(outputs, item[0])
-        loss.backward()
-        optimizer.step()
-        print(loss.item())
-
-torch.save(model.state_dict(), 'model_weights.pth')
