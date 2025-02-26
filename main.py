@@ -9,7 +9,7 @@ import pandas as pd
 from torchvision.ops import MLP
 
 torch.manual_seed(1)
-data = pd.read_csv('male_data.csv')
+data = pd.read_csv('full_data.csv')
 wteam, lteam = data['WTeamID'], data['LTeamID']
 #data = data.drop(columns=['WTeamID', 'LTeamID'])
 wteam, lteam, data = torch.from_numpy(wteam.to_numpy()).long(), torch.from_numpy(lteam.to_numpy()).long(), torch.from_numpy(data.to_numpy()).float()
@@ -21,12 +21,14 @@ wins[swap] = 0
 wins = wins.unsqueeze(1)
 
 class Prediction(nn.Module):
-    def __init__(self, training_input=35, hidden_dim=256, embedding_dim=8, output_dim=1, num_teams=1481):
+    def __init__(self, training_input=35, hidden_dim=256, embedding_dim=8, output_dim=1, num_teams=3481):
         super(Prediction, self).__init__()
         self.team_embedding = nn.Embedding(num_teams, embedding_dim)
         self.lstm = nn.LSTM(training_input, hidden_dim, batch_first=True)
+
+
         self.emb_to_hidden = nn.Linear(2 * embedding_dim, hidden_dim)
-        self.test_lstm = nn.Linear(2*embedding_dim, training_input)
+        self.test_lstm = nn.Linear(hidden_dim, training_input)
 
         self.training_fc1 = nn.Sequential(
             nn.Linear(hidden_dim, hidden_dim),
@@ -110,16 +112,17 @@ class Prediction(nn.Module):
         self.team2_emb = self.team_embedding(team2)
         tms = torch.cat([self.team1_emb, self.team2_emb], dim=1)
         x = self.emb_to_hidden(tms)
-        y = self.test_lstm(tms)
-        test_y, _ = self.lstm(y.unsqueeze(1))
-        test_y = test_y.squeeze(1)
 
         if training:
             self.lstm_out, (self.h_n, self.c_n) = self.lstm(features.unsqueeze(1))
             self.lstm_out = self.lstm_out.squeeze(1)
             x = x + self.lstm_out
             x = self.training_fc1(x)
+            x = self.testing_fc1(x)
         else:
+            y = self.test_lstm(x)
+            test_y, _ = self.lstm(y.unsqueeze(1))
+            test_y = test_y.squeeze(1)
             x = self.testing_fc1(test_y)
 
         x = self.fc2(x)
@@ -130,9 +133,11 @@ class Prediction(nn.Module):
 
 model = Prediction()
 tensor_dataset = TensorDataset(t1, t2, data)
-dataloader = DataLoader(tensor_dataset, batch_size=128, shuffle=False)
+dataloader = DataLoader(tensor_dataset, batch_size=256, shuffle=False)
 epochs = 100
 
 for t1, t2, features in dataloader:
-    x = model(t1, t2, training=False)
+    x = model(t1,t2, training=False)
+    print(x)
     break
+
