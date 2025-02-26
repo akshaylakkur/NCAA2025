@@ -26,6 +26,8 @@ class Prediction(nn.Module):
         self.team_embedding = nn.Embedding(num_teams, embedding_dim)
         self.lstm = nn.LSTM(training_input, hidden_dim, batch_first=True)
         self.emb_to_hidden = nn.Linear(2 * embedding_dim, hidden_dim)
+        self.test_lstm = nn.Linear(2*embedding_dim, training_input)
+
         self.training_fc1 = nn.Sequential(
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(),
@@ -108,6 +110,9 @@ class Prediction(nn.Module):
         self.team2_emb = self.team_embedding(team2)
         tms = torch.cat([self.team1_emb, self.team2_emb], dim=1)
         x = self.emb_to_hidden(tms)
+        y = self.test_lstm(tms)
+        test_y, _ = self.lstm(y.unsqueeze(1))
+        test_y = test_y.squeeze(1)
 
         if training:
             self.lstm_out, (self.h_n, self.c_n) = self.lstm(features.unsqueeze(1))
@@ -115,7 +120,7 @@ class Prediction(nn.Module):
             x = x + self.lstm_out
             x = self.training_fc1(x)
         else:
-            x = self.testing_fc1(x)
+            x = self.testing_fc1(test_y)
 
         x = self.fc2(x)
         x = self.fc3(x)
