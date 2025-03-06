@@ -1,143 +1,74 @@
-'nn.BatchNorm1d(20, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True),'
-import torch
-import torch.nn as nn
-import torch.optim as optim
-import torch.nn.functional as F
-import numpy as np
-from torch.utils.data import DataLoader, Dataset, TensorDataset
 import pandas as pd
+import numpy as np
+import torch.nn as nn
+import torch
+import torch.optim as optim
+import os
 from torchvision.ops import MLP
+import torch.nn.functional as F
 
-torch.manual_seed(1)
-data = pd.read_csv('full_data.csv')
-wteam, lteam = data['WTeamID'], data['LTeamID']
-#data = data.drop(columns=['WTeamID', 'LTeamID'])
-wteam, lteam, data = torch.from_numpy(wteam.to_numpy()).long(), torch.from_numpy(lteam.to_numpy()).long(), torch.from_numpy(data.to_numpy()).float()
-swap = torch.randn(len(wteam)) > 0.5
-t1 = torch.where(swap, lteam,wteam)
-t2 = torch.where(swap, wteam,lteam)
-wins = torch.ones_like(t1, dtype=torch.float32)
-wins[swap] = 0
-wins = wins.unsqueeze(1)
+csv = '/Users/akshaylakkur/PycharmProjects/MarchMadness/current/files/TrainingData.csv'
+data = pd.read_csv(csv)
+files = os.listdir('/Users/akshaylakkur/PycharmProjects/MarchMadness/current/indiv_team_data')
 
-class Prediction(nn.Module):
-    def __init__(self, training_input=35, hidden_dim=256, embedding_dim=8, output_dim=1, num_teams=3481):
-        super(Prediction, self).__init__()
-        self.team_embedding = nn.Embedding(num_teams, embedding_dim)
-        self.lstm = nn.LSTM(training_input, hidden_dim, batch_first=True)
+def swap(data):
+    wteam, lteam = data['WTeamID'], data['LTeamID']
+    wteam, lteam, data = torch.from_numpy(wteam.to_numpy()).long(), torch.from_numpy(lteam.to_numpy()).long(), torch.from_numpy(data.to_numpy()).float()
+    swap = torch.randn(len(wteam)) > 0.5
+    team1 = torch.where(swap, lteam,wteam)
+    team2 = torch.where(swap, wteam,lteam)
+    wins = torch.ones_like(team1, dtype=torch.float32)
+    wins[swap] = 0
+    wins = wins.unsqueeze(1)
+    return wins
+
+def test_inputs(team1:int, team2:int):
+    t1 = f'/Users/akshaylakkur/PycharmProjects/MarchMadness/current/indiv_team_data/historic_data_{team1}.csv'
+    t2 = f'/Users/akshaylakkur/PycharmProjects/MarchMadness/current/indiv_team_data/historic_data_{team2}.csv'
+    team_data_1 = pd.read_csv(t1)
+    team_data_2 = pd.read_csv(t2)
+    t1 = torch.from_numpy(team_data_1.to_numpy()).float()
+    t2 = torch.from_numpy(team_data_2.to_numpy()).float()
+    return t1, t2, team_data_1, team_data_2
 
 
-        self.emb_to_hidden = nn.Linear(2 * embedding_dim, hidden_dim)
-        self.test_lstm = nn.Linear(hidden_dim, training_input)
-
-        self.training_fc1 = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.ReLU(),
-            nn.BatchNorm1d(hidden_dim, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True),
-            nn.Dropout(0.2),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.ReLU(),
-            nn.BatchNorm1d(hidden_dim, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True),
-            nn.Dropout(0.2),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.Linear(hidden_dim, hidden_dim),
-        )
-
-        #Input -> [2,16]
-        self.testing_fc1 = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.LayerNorm(hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.LayerNorm(hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.Linear(hidden_dim,hidden_dim),
-            nn.LayerNorm(hidden_dim),
-            nn.ReLU()
-        )
-
-        self.fc2 = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.ReLU(),
-            nn.BatchNorm1d(hidden_dim, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True),
-            nn.Dropout(0.2),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.ReLU(),
-            nn.BatchNorm1d(hidden_dim, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True),
-            nn.Dropout(0.2),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.ReLU()
-        )
-
-        self.fc3 = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.ReLU(),
-            nn.BatchNorm1d(hidden_dim, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True),
-            nn.Dropout(0.2),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.ReLU(),
-            nn.BatchNorm1d(hidden_dim, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.ReLU()
-        )
-
-        self.fc4 = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.ReLU(),
-            nn.BatchNorm1d(hidden_dim, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True),
-            nn.Dropout(0.2),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.ReLU(),
-            nn.BatchNorm1d(hidden_dim, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.ReLU()
-        )
-
-        self.prediction_layer = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim*2),
-            nn.Linear(hidden_dim*2, hidden_dim*4),
-            nn.Linear(hidden_dim*4, hidden_dim*8),
-            nn.Linear(hidden_dim*8, output_dim),
-            nn.Sigmoid()
-        )
-    def forward(self, team1, team2, features=None, training=True):
-        self.team1_emb = self.team_embedding(team1)
-        self.team2_emb = self.team_embedding(team2)
-        tms = torch.cat([self.team1_emb, self.team2_emb], dim=1)
-        x = self.emb_to_hidden(tms)
-
+backbone = MLP(36, [64, 128, 256, 256, 256, 256, 256], norm_layer=nn.LayerNorm, activation_layer=nn.ReLU, inplace=True, bias=True, dropout=0.2)
+output_perceptron = MLP(256, [256, 128, 128, 64], norm_layer=nn.LayerNorm, activation_layer=nn.ReLU, bias=True, dropout=0.2)
+class TransformerModel(nn.Module):
+    def __init__(self, MLPBackbone, outputPerceptron):
+        super(TransformerModel, self).__init__()
+        self.backbone = MLPBackbone
+        transformer_encoder_layer = nn.TransformerEncoderLayer(256, 4, batch_first=True)
+        self.encoder = nn.TransformerEncoder(transformer_encoder_layer, num_layers=3)
+        self.output_perceptron = outputPerceptron
+        self.prediction_setup = nn.Linear(64,1)
+    def forward(self, t1, t2, training=True):
         if training:
-            self.lstm_out, (self.h_n, self.c_n) = self.lstm(features.unsqueeze(1))
-            self.lstm_out = self.lstm_out.squeeze(1)
-            x = x + self.lstm_out
-            x = self.training_fc1(x)
-            x = self.testing_fc1(x)
+            mem = torch.cat((t1, t2), dim=0)
+            x = self.backbone(mem)
+            x = self.encoder(x)
+            x = self.output_perceptron(x)
+            x = self.prediction_setup(x)
         else:
-            y = self.test_lstm(x)
-            test_y, _ = self.lstm(y.unsqueeze(1))
-            test_y = test_y.squeeze(1)
-            x = self.testing_fc1(test_y)
+            mem = torch.cat((t1, t2), dim=0)
+            x = self.backbone(mem)
+            x = self.encoder(x)
+            x = self.output_perceptron(x)
+            x = self.prediction_setup(x).view(-1)
+            pred_layer = nn.Linear(x.shape[0], 1)
+            x = pred_layer(x)
+        return torch.sigmoid(x)
 
-        x = self.fc2(x)
-        x = self.fc3(x)
-        x = self.fc4(x)
-        x = self.prediction_layer(x)
-        return x
 
-model = Prediction()
-tensor_dataset = TensorDataset(t1, t2, data)
-dataloader = DataLoader(tensor_dataset, batch_size=256, shuffle=False)
-epochs = 100
+model = TransformerModel(backbone, output_perceptron)
+t1, t2, raw1, raw2 = test_inputs(1245, 1480)
+wins1 = swap(raw1)
+wins2 = swap(raw2)
+wins = torch.cat((wins1, wins2), dim=0)
 
-for t1, t2, features in dataloader:
-    x = model(t1,t2, training=False)
-    print(x)
-    break
-
+loss_fn = nn.BCEWithLogitsLoss()
+optimizer = optim.Adam(model.parameters(), lr=0.001)
+model.train()
+optimizer.zero_grad()
+out = model(t1, t2, training=False)
+print(out)
